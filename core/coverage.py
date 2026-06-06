@@ -63,22 +63,6 @@ COVERAGE_MATRIX = {
             "get_network_connections": "network_analysis",
         }
     },
-    "memory_analysis": {
-        "mandatory": [
-            "process_analysis",
-            "command_history",
-        ],
-        "optional": [
-            "injection_detection",
-            "network_analysis",
-        ],
-        "tool_to_category": {
-            "get_process_list":        "process_analysis",
-            "get_cmdlines":            "command_history",
-            "get_malfind":             "injection_detection",
-            "get_network_connections": "network_analysis",
-        }
-    },
 }
 
 _tracker = None

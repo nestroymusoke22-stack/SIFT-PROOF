@@ -13,6 +13,11 @@ logs/*.log
 logs/*.bak
 
 
+# Runtime investigation checkpoint — regenerated per run, must never be committed
+# (a stale checkpoint hijacks fresh runs that mount to /mnt/windows_c)
+agent/progress.json
+
+
 .env
 *.env
 .env.local
