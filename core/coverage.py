@@ -10,11 +10,11 @@ COVERAGE_MATRIX = {
         ],
         "optional": ["network_indicators", "memory_artifacts"],
         "tool_to_category": {
-            "get_mft_timeline": "file_system_timeline",
-            "get_amcache": "execution_artifacts",
-            "get_prefetch": "execution_artifacts",
-            "get_evtx_events": "user_activity",
-            "get_registry_runkeys": "persistence_mechanisms",
+            "get_mft_timeline":      "file_system_timeline",
+            "get_amcache":           "execution_artifacts",
+            "get_prefetch":          "execution_artifacts",
+            "get_evtx_events":       "user_activity",
+            "get_registry_runkeys":  "persistence_mechanisms",
         }
     },
     "ransomware": {
@@ -24,24 +24,61 @@ COVERAGE_MATRIX = {
         ],
         "optional": ["network_indicators"],
         "tool_to_category": {
-            "get_mft_timeline": "file_system_timeline",
-            "get_amcache": "execution_artifacts",
-            "get_prefetch": "execution_artifacts",
-            "get_evtx_events": "user_activity",
-            "get_registry_runkeys": "persistence_mechanisms",
+            "get_mft_timeline":      "file_system_timeline",
+            "get_amcache":           "execution_artifacts",
+            "get_prefetch":          "execution_artifacts",
+            "get_evtx_events":       "user_activity",
+            "get_registry_runkeys":  "persistence_mechanisms",
         }
     },
     "generic": {
         "mandatory": ["execution_artifacts", "file_system_timeline"],
         "optional": ["persistence_mechanisms", "user_activity"],
         "tool_to_category": {
-            "get_mft_timeline": "file_system_timeline",
-            "get_amcache": "execution_artifacts",
-            "get_prefetch": "execution_artifacts",
-            "get_evtx_events": "user_activity",
-            "get_registry_runkeys": "persistence_mechanisms",
+            "get_mft_timeline":      "file_system_timeline",
+            "get_amcache":           "execution_artifacts",
+            "get_prefetch":          "execution_artifacts",
+            "get_evtx_events":       "user_activity",
+            "get_registry_runkeys":  "persistence_mechanisms",
         }
-    }
+    },
+
+    # ── Memory image investigation ────────────────────────────────────────────
+    # Mandatory: process list + command lines (always work on any Windows dump)
+    # Optional:  injection detection (malfind can timeout on large images)
+    #            network scan (netscan can timeout on large images)
+    "memory_analysis": {
+        "mandatory": [
+            "process_analysis",
+            "command_history",
+        ],
+        "optional": [
+            "injection_detection",
+            "network_analysis",
+        ],
+        "tool_to_category": {
+            "get_process_list":        "process_analysis",
+            "get_cmdlines":            "command_history",
+            "get_malfind":             "injection_detection",
+            "get_network_connections": "network_analysis",
+        }
+    },
+    "memory_analysis": {
+        "mandatory": [
+            "process_analysis",
+            "command_history",
+        ],
+        "optional": [
+            "injection_detection",
+            "network_analysis",
+        ],
+        "tool_to_category": {
+            "get_process_list":        "process_analysis",
+            "get_cmdlines":            "command_history",
+            "get_malfind":             "injection_detection",
+            "get_network_connections": "network_analysis",
+        }
+    },
 }
 
 _tracker = None
@@ -50,11 +87,11 @@ _tracker = None
 class CoverageTracker:
     def __init__(self, case_type="generic"):
         config = COVERAGE_MATRIX.get(case_type, COVERAGE_MATRIX["generic"])
-        self.case_type = case_type
-        self.mandatory = config["mandatory"]
-        self.optional = config.get("optional", [])
-        self.tool_map = config["tool_to_category"]
-        self.covered = set()
+        self.case_type  = case_type
+        self.mandatory  = config["mandatory"]
+        self.optional   = config.get("optional", [])
+        self.tool_map   = config["tool_to_category"]
+        self.covered    = set()
         self.tools_called = []
         print(f"[COVERAGE] Initialized: {case_type}")
         print(f"[COVERAGE] Mandatory: {self.mandatory}")
@@ -67,16 +104,19 @@ class CoverageTracker:
             print(f"[COVERAGE] ✓ Covered: {category}")
 
     def report(self):
-        missing = [c for c in self.mandatory if c not in self.covered]
+        missing           = [c for c in self.mandatory if c not in self.covered]
         covered_mandatory = [c for c in self.mandatory if c in self.covered]
-        pct = int(len(covered_mandatory) / len(self.mandatory) * 100) if self.mandatory else 100
+        pct = (
+            int(len(covered_mandatory) / len(self.mandatory) * 100)
+            if self.mandatory else 100
+        )
         return {
-            "coverage_percentage": pct,
-            "mandatory_covered": covered_mandatory,
-            "mandatory_missing": missing,
-            "optional_covered": [c for c in self.optional if c in self.covered],
-            "tools_called": self.tools_called,
-            "is_complete": len(missing) == 0
+            "coverage_percentage":  pct,
+            "mandatory_covered":    covered_mandatory,
+            "mandatory_missing":    missing,
+            "optional_covered":     [c for c in self.optional if c in self.covered],
+            "tools_called":         self.tools_called,
+            "is_complete":          len(missing) == 0,
         }
 
     def assert_complete(self):

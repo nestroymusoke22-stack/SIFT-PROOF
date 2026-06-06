@@ -1,0 +1,10 @@
+{
+  "saved_at": "2026-06-06T08:24:42.203973",
+  "image_path": "/mnt/windows_c",
+  "case_type": "windows_compromise",
+  "iteration": 9,
+  "findings": [],
+  "coverage": {},
+  "pending_goals": "completed tool query_evidence, continuing",
+  "status": "in_progress"
+}

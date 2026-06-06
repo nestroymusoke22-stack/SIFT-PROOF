@@ -1,4 +1,3 @@
-
 import argparse
 import json
 import os
@@ -6,15 +5,18 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 
+MEM_EXTENSIONS = ('.raw', '.mem', '.dmp', '.vmem', '.lime')
+
 
 def main():
     parser = argparse.ArgumentParser(
         description="SIFT-PROOF — Autonomous Forensic Investigation Agent"
     )
-    parser.add_argument('--image', help='Path to disk image file')
+    parser.add_argument('--image', help='Path to disk image or memory dump file')
     parser.add_argument('--type', default='generic',
-                        choices=['windows_compromise', 'ransomware', 'generic'],
-                        help='Investigation type')
+                        choices=['windows_compromise', 'ransomware',
+                                 'generic', 'memory_analysis'],
+                        help='Investigation type (auto-detected for memory dumps)')
     parser.add_argument('--demo', action='store_true',
                         help='Run with pre-loaded test data (no image needed)')
     parser.add_argument('--backend', choices=['groq', 'ollama', 'anthropic'],
@@ -22,6 +24,8 @@ def main():
     parser.add_argument('--max-iter', type=int, default=25,
                         help='Maximum agent iterations (default: 25)')
     parser.add_argument('--report', help='Save final report to JSON file')
+    parser.add_argument('--fresh', action='store_true',
+                        help='Ignore saved checkpoint and start fresh')
 
     args = parser.parse_args()
 
@@ -39,7 +43,15 @@ def main():
         print("For Groq: export GROQ_API_KEY='gsk_...'")
         sys.exit(1)
 
-    # Demo mode: load test data and investigate it
+    # Clear checkpoint if --fresh requested
+    if args.fresh:
+        try:
+            from agent.progress_state import clear_progress
+            clear_progress()
+        except Exception:
+            pass
+
+    # Demo mode
     if args.demo:
         print("\n[DEMO MODE] Loading test dataset...")
         from data.create_test_data import create_test_dataset
@@ -54,6 +66,15 @@ def main():
             print(f"ERROR: Image file not found: {args.image}")
             sys.exit(1)
 
+        # Auto-detect memory image — override type if needed
+        image_lower = args.image.lower()
+        if any(image_lower.endswith(ext) for ext in MEM_EXTENSIONS):
+            if args.type not in ('memory_analysis',):
+                ext = os.path.splitext(args.image)[1]
+                print(f"[AUTO] Memory image detected ({ext}) "
+                      f"— switching to memory_analysis mode")
+                args.type = "memory_analysis"
+
         from agent.agent_loop import run_investigation
         report = run_investigation(args.image, args.type, args.max_iter)
 
@@ -62,11 +83,14 @@ def main():
         print("\nExamples:")
         print("  python3 run_investigation.py --demo")
         print("  python3 run_investigation.py --image /cases/disk.dd --type windows_compromise")
+        print("  python3 run_investigation.py --image /cases/memory.raw")
         print("  python3 run_investigation.py --demo --backend ollama")
+        print("  python3 run_investigation.py --image /cases/disk.dd --fresh")
         sys.exit(0)
 
     # Save report if requested
     if args.report and report:
+        os.makedirs(os.path.dirname(os.path.abspath(args.report)), exist_ok=True)
         with open(args.report, 'w') as f:
             json.dump(report, f, indent=2, default=str)
         print(f"\nReport saved to: {args.report}")

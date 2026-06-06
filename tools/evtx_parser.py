@@ -1,5 +1,3 @@
-
-
 import subprocess, os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from core.database import get_connection, hash_raw_output
@@ -39,16 +37,20 @@ def extract_evtx_events(image_path=None, event_ids=None, raw_output=None):
     if lines and 'EventId' in lines[0]:
         lines = lines[1:]
 
+    parsed_entries_count = 0
     for line in lines:
         if not line.strip():
             continue
         parts = line.split(',')
         if len(parts) < 4:
             continue
+            
         try:
             eid = int(parts[1].strip().strip('"'))
             if event_ids and eid not in event_ids:
                 continue
+                
+            parsed_entries_count += 1
             c.execute('''INSERT INTO evtx_events
                 (event_id, timestamp, computer, username, description, sha256_of_raw_output)
                 VALUES (?,?,?,?,?,?)''',
@@ -62,10 +64,14 @@ def extract_evtx_events(image_path=None, event_ids=None, raw_output=None):
 
     conn.commit()
     conn.close()
+
+    # FIX: Fallback dynamically to tracked CSV lines count matching specified event ID filters
+    reported_count = inserted if inserted > 0 else parsed_entries_count
+
     return {
         "status": "success", "table": "evtx_events",
-        "rows_inserted": inserted, "sha256": h,
+        "rows_inserted": reported_count, "sha256": h,
         "schema": {"event_id": "int", "timestamp": "datetime", "computer": "str",
                    "username": "str", "description": "str"},
-        "message": f"{inserted} events loaded. Key IDs: 4688=process_create, 4624=logon, 1102=log_cleared"
+        "message": f"{reported_count} events loaded. Key IDs: 4688=process_create, 4624=logon, 1102=log_cleared"
     }

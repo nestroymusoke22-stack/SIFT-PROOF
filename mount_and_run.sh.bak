@@ -1,0 +1,62 @@
+#!/bin/bash
+# mount_and_run.sh — Mounts the E01 image and runs the full investigation
+# Usage: bash mount_and_run.sh
+set -e
+
+DISK="/media/sf_win7-64-nfury-10.3.58.6/win7-64-nfury-c-drive/win7-64-nfury-c-drive.E01"
+EWF_MOUNT="/mnt/ewf"
+WIN_MOUNT="/mnt/windows_c"
+
+echo "============================================"
+echo "SIFT-PROOF: Mounting E01 Image"
+echo "============================================"
+
+# Create mount points using sudo to ensure privileges
+sudo mkdir -p "$EWF_MOUNT" "$WIN_MOUNT"
+sudo umount "$WIN_MOUNT" 2>/dev/null || true
+sudo umount "$EWF_MOUNT" 2>/dev/null || true
+
+echo "[MOUNT] Mounting E01 container..."
+sudo ewfmount "$DISK" "$EWF_MOUNT"
+echo "[MOUNT] E01 container mounted at $EWF_MOUNT"
+
+echo "[MOUNT] Detecting partition layout..."
+MMLS_OUT=$(sudo mmls "$EWF_MOUNT/ewf1" 2>/dev/null || sudo mmls -t dos "$EWF_MOUNT/ewf1" 2>/dev/null)
+echo "$MMLS_OUT"
+
+OFFSET_SECTORS=$(echo "$MMLS_OUT" | grep -i "NTFS\|Basic data\|07" | awk '{print $3}' | sort -n | head -1)
+if [ -z "$OFFSET_SECTORS" ]; then
+    echo "[MOUNT] Could not auto-detect partition. Trying common offset 2048..."
+    OFFSET_SECTORS=2048
+fi
+OFFSET_BYTES=$((OFFSET_SECTORS * 512))
+echo "[MOUNT] Using partition offset: $OFFSET_SECTORS sectors ($OFFSET_BYTES bytes)"
+
+echo "[MOUNT] Mounting Windows partition..."
+sudo mount -t ntfs-3g -o ro,noatime,loop,offset=$OFFSET_BYTES "$EWF_MOUNT/ewf1" "$WIN_MOUNT"
+echo "[MOUNT] Windows partition mounted at $WIN_MOUNT"
+
+echo ""
+echo "[VERIFY] Checking forensic artifact locations..."
+for path in \
+    "$WIN_MOUNT/Windows/System32/config" \
+    "$WIN_MOUNT/Windows/System32/winevt/Logs" \
+    "$WIN_MOUNT/Windows/Prefetch" \
+    "$WIN_MOUNT/Users"; do
+    if [ -d "$path" ]; then
+        COUNT=$(ls "$path" 2>/dev/null | wc -l)
+        echo "  ✅ $path ($COUNT items)"
+    else
+        echo "  ⚠️  $path (not found)"
+    fi
+done
+
+echo ""
+echo "============================================"
+echo "MOUNT COMPLETE — Starting Investigation"
+echo "============================================"
+echo ""
+
+cd ~/sift-proof
+source venv/bin/activate 2>/dev/null || true
+python3 run_investigation.py --image "$WIN_MOUNT" --type windows_compromise --fresh
