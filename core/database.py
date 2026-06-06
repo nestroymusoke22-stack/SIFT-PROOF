@@ -1,13 +1,3 @@
-"""
-core/database.py — SQLite Evidence Layer
-
-WHY: Raw SIFT tool output is thousands of lines of text.
-     Feeding that to an LLM causes context overload and hallucinations.
-     This file converts all raw output into SQLite tables BEFORE
-     the LLM ever sees it. The LLM gets schema + row counts only.
-     It then queries the database using SQL — facts, not guesses.
-"""
-
 import sqlite3
 import hashlib
 import os
@@ -86,6 +76,57 @@ def initialize_database():
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )''')
 
+    # ── Memory-analysis tables (Volatility3) ──────────────────────────────────
+    c.execute('''CREATE TABLE IF NOT EXISTS memory_processes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pid INTEGER, ppid INTEGER, process_name TEXT,
+        create_time TEXT, exit_time TEXT,
+        threads INTEGER DEFAULT 0, handles INTEGER DEFAULT 0,
+        sha256_of_raw_output TEXT,
+        inserted_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS memory_network (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pid INTEGER, process_name TEXT, proto TEXT,
+        local_addr TEXT, local_port TEXT,
+        remote_addr TEXT, remote_port TEXT, state TEXT,
+        sha256_of_raw_output TEXT,
+        inserted_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS memory_cmdlines (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pid INTEGER, process_name TEXT, cmdline TEXT,
+        sha256_of_raw_output TEXT,
+        inserted_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS memory_injections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pid INTEGER, process_name TEXT,
+        start_va TEXT, end_va TEXT,
+        protection TEXT, file_output TEXT,
+        sha256_of_raw_output TEXT,
+        inserted_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )''')
+
+    # ── Defensive indexes on heavily-filtered columns (query speed) ───────────
+    for stmt in (
+        "CREATE INDEX IF NOT EXISTS idx_mft_filename ON mft_events(filename)",
+        "CREATE INDEX IF NOT EXISTS idx_mft_full_path ON mft_events(full_path)",
+        "CREATE INDEX IF NOT EXISTS idx_mft_action ON mft_events(action)",
+        "CREATE INDEX IF NOT EXISTS idx_amcache_name ON amcache_entries(program_name)",
+        "CREATE INDEX IF NOT EXISTS idx_prefetch_name ON prefetch_events(executable_name)",
+        "CREATE INDEX IF NOT EXISTS idx_evtx_event_id ON evtx_events(event_id)",
+        "CREATE INDEX IF NOT EXISTS idx_reg_key_path ON registry_runkeys(key_path)",
+        "CREATE INDEX IF NOT EXISTS idx_reg_value_data ON registry_runkeys(value_data)",
+        "CREATE INDEX IF NOT EXISTS idx_memproc_name ON memory_processes(process_name)",
+        "CREATE INDEX IF NOT EXISTS idx_memcmd_name ON memory_cmdlines(process_name)",
+        "CREATE INDEX IF NOT EXISTS idx_memnet_remote ON memory_network(remote_addr)",
+    ):
+        c.execute(stmt)
+
     conn.commit()
     conn.close()
     print("[DB] All tables initialized.")
@@ -118,8 +159,13 @@ def clear_database():
     """Wipes all tables for a fresh investigation."""
     conn = get_connection()
     c = conn.cursor()
-    for t in ['mft_events', 'amcache_entries', 'prefetch_events',
-              'evtx_events', 'registry_runkeys', 'confirmed_findings']:
+    tables = [
+        'mft_events', 'amcache_entries', 'prefetch_events',
+        'evtx_events', 'registry_runkeys', 'confirmed_findings',
+        'memory_processes', 'memory_network',
+        'memory_cmdlines', 'memory_injections'
+    ]
+    for t in tables:
         c.execute(f"DELETE FROM {t}")
     conn.commit()
     conn.close()

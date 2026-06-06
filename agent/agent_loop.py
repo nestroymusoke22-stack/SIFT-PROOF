@@ -1,4 +1,5 @@
 import json
+import re
 import sys
 import os
 import argparse
@@ -72,6 +73,42 @@ Step 6: Call conclude_investigation.
 SQL SYNTAX: strings need single quotes: executable_name = 'evil.exe' or LIKE '%evil%'
 
 IMPORTANT: Output ONLY the JSON object. No explanation before or after it."""
+
+
+# Largest tool result (in chars) we will ever feed back into the LLM context.
+# Protects against Groq free-tier TPM / HTTP 413 even if a tool ignores its caps.
+MAX_RESULT_CHARS = 6000
+
+
+def strip_reasoning(text):
+    """
+    Remove model reasoning blocks before JSON parsing.
+
+    Handles well-formed <think>...</think>, unclosed <think> (model was cut off
+    mid-reasoning), and a few common variants (<reasoning>, <thinking>).
+    """
+    if not text:
+        return ""
+    # Closed blocks, any of the common tag names, non-greedy, across newlines.
+    text = re.sub(r'<(think|thinking|reasoning)>.*?</\1>', '', text,
+                  flags=re.DOTALL | re.IGNORECASE)
+    # Unclosed opening tag → drop everything from the tag onward.
+    text = re.sub(r'<(think|thinking|reasoning)>.*$', '', text,
+                  flags=re.DOTALL | re.IGNORECASE)
+    # Stray closing tag with no opener → drop everything before it.
+    m = re.search(r'</(think|thinking|reasoning)>', text, flags=re.IGNORECASE)
+    if m:
+        text = text[m.end():]
+    return text.strip()
+
+
+def _truncate_result(result_str):
+    """Hard cap on the tool-result string handed back to the LLM."""
+    if result_str and len(result_str) > MAX_RESULT_CHARS:
+        return (result_str[:MAX_RESULT_CHARS]
+                + f"\n…[truncated {len(result_str) - MAX_RESULT_CHARS} chars; "
+                  "use query_evidence with a tighter sql_filter/limit]")
+    return result_str
 
 
 def dispatch(tool_name, arguments):
@@ -193,11 +230,8 @@ def run_investigation(image_path, case_type="generic", max_iterations=30):
             print(f"[AGENT] LLM error: {e}")
             break
 
-        # Strip <think>...</think> blocks (Qwen, DeepSeek reasoning models)
-        if response_text and '<think>' in response_text:
-            import re as _re
-            response_text = _re.sub(r'<think>.*?</think>', '', response_text,
-                                    flags=_re.DOTALL).strip()
+        # Strip reasoning blocks (Qwen, DeepSeek, etc.) before any JSON parsing
+        response_text = strip_reasoning(response_text)
 
         print(f"[AGENT] Raw response: {response_text[:200] if response_text else 'empty'}")
 
@@ -289,14 +323,12 @@ def run_investigation(image_path, case_type="generic", max_iterations=30):
         _save_state(iteration, image_path, case_type,
                     f"completed tool {tool_name}, continuing")
 
-        # ── Add exchange to conversation history ──────────────────────────────
+        # ── Add exchange to conversation history (capped to protect context) ──
         messages.append({"role": "assistant", "content": response_text})
         messages.append({
             "role": "user",
-            "content": (
-                f"Tool '{tool_name}' result:\n{result_str}\n\n"
-                f"What is your next tool call? Output JSON only."
-            )
+            "content": (f"Tool '{tool_name}' result:\n{_truncate_result(result_str)}\n\n"
+                        f"What is your next tool call? Output JSON only.")
         })
 
     print(f"\n[AGENT] Finished after {iteration} iterations.")
@@ -359,4 +391,3 @@ if __name__ == "__main__":
         print("[PROGRESS] Fresh start — checkpoint cleared.")
 
     run_investigation(image_path=args.image, case_type=args.type)
-

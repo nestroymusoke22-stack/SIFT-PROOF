@@ -68,15 +68,33 @@ def main():
 
         # Auto-detect memory image — override type if needed
         image_lower = args.image.lower()
-        if any(image_lower.endswith(ext) for ext in MEM_EXTENSIONS):
-            if args.type not in ('memory_analysis',):
-                ext = os.path.splitext(args.image)[1]
-                print(f"[AUTO] Memory image detected ({ext}) "
-                      f"— switching to memory_analysis mode")
-                args.type = "memory_analysis"
+        is_memory = any(image_lower.endswith(ext) for ext in MEM_EXTENSIONS)
+        if is_memory and args.type not in ('memory_analysis',):
+            ext = os.path.splitext(args.image)[1]
+            print(f"[AUTO] Memory image detected ({ext}) "
+                  f"— switching to memory_analysis mode")
+            args.type = "memory_analysis"
+
+        # ── Dynamic evidence ingestion (Case A/B/C + cleanup) ──────────────
+        # Memory dumps go straight to Volatility; disk images/E01 are mounted;
+        # directories pass straight through.
+        from core.mounting import prepare_evidence, teardown, MountError
+        mounted = False
+        target = args.image
+        if not is_memory:
+            try:
+                target, mounted = prepare_evidence(args.image)
+            except MountError as e:
+                print(f"ERROR: {e}")
+                sys.exit(2)
 
         from agent.agent_loop import run_investigation
-        report = run_investigation(args.image, args.type, args.max_iter)
+        try:
+            report = run_investigation(target, args.type, args.max_iter)
+        finally:
+            if mounted:
+                print("[MOUNT] Tearing down mounts...")
+                teardown()
 
     else:
         parser.print_help()

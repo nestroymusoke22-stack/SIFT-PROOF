@@ -167,9 +167,7 @@ def extract_process_list(image_path):
 
     conn.commit()
     conn.close()
-
-    # FIX: Fall back dynamically to len(rows) if internal loop count drops anomalies
-    reported_count = inserted if inserted > 0 else len(rows)
+    reported_count = inserted
 
     print(f"[VOL] Inserted {reported_count} processes")
     return {
@@ -243,9 +241,7 @@ def extract_network_connections(image_path):
 
     conn.commit()
     conn.close()
-
-    # FIX: Use length of parsed row dictionaries if counter tracking gets dropped
-    reported_count = inserted if inserted > 0 else len(rows)
+    reported_count = inserted
 
     print(f"[VOL] Inserted {reported_count} network connections")
     return {
@@ -321,9 +317,7 @@ def extract_cmdlines(image_path):
 
     conn.commit()
     conn.close()
-
-    # FIX: Match the total structural items successfully parsed from stream splits
-    reported_count = inserted if inserted > 0 else parsed_cmdlines_count
+    reported_count = inserted
 
     print(f"[VOL] Inserted {reported_count} command lines")
     return {
@@ -382,9 +376,7 @@ def extract_malfind(image_path):
 
     conn.commit()
     conn.close()
-
-    # FIX: Fallback to length of rows found if insert transaction handles count drops
-    reported_count = inserted if inserted > 0 else len(rows)
+    reported_count = inserted
 
     print(f"[VOL] Inserted {reported_count} suspicious memory regions")
     return {

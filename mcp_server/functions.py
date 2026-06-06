@@ -1,17 +1,13 @@
-
-from tools.volatility_parser import (extract_process_list,
-    extract_network_connections, extract_cmdlines, extract_malfind)
-from core.sanitizer import sanitize_args
-
-import json
-import sys
 import os
-import sqlite3
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+from tools.volatility_parser import (extract_process_list,
+    extract_network_connections, extract_cmdlines, extract_malfind)
+
 from core.database import (initialize_database, clear_database,
-                           execute_safe_query, get_connection)
+                           execute_safe_query)
 from core.assertions import run_assertion, AssertionFailedError, TemporalContradictionError
 from core.coverage import initialize_coverage, record_tool_call, get_coverage_report, check_can_conclude
 from core.ledger import log_start, log_tool, log_assertion, log_end
@@ -38,32 +34,41 @@ def _count_rows(table):
         return 0
 
 
+_MAX_FIELD_CHARS = 160
+
+
+def _truncate_row(row, max_chars=_MAX_FIELD_CHARS):
+    """
+    Shrink a single DB row before it is handed to the LLM.
+
+    Drops the bulky chain-of-custody hash and clips any oversized string field
+    so a wide row (e.g. a long cmdline or registry blob) can never blow up the
+    token budget.
+    """
+    slim = {}
+    for k, v in dict(row).items():
+        if k == 'sha256_of_raw_output':
+            continue
+        if isinstance(v, str) and len(v) > max_chars:
+            v = v[:max_chars] + f"…(+{len(v) - max_chars} chars)"
+        slim[k] = v
+    return slim
+
+
 # ─────────────────────────────────────────────────────────────
 # INVESTIGATION LIFECYCLE
 # ─────────────────────────────────────────────────────────────
 
 def start_investigation(image_path, case_type="generic"):
-    if "memory" in case_type.lower():
-        case_type = "memory_analysis"
-    
     """
     Initialise a new investigation.
-
-    FIX: When image_path == "TEST_MODE" we do NOT call clear_database()
-        # MEMORY_TABLES_CLEAR — wipe memory tables too (added by fix_final.py)
-        try:
-            _conn = get_connection()
-            _c = _conn.cursor()
-            for _t in ['memory_processes','memory_network',
-                       'memory_cmdlines','memory_injections']:
-                _c.execute(f"DELETE FROM {_t}")
-            _conn.commit()
-            _conn.close()
-        except Exception:
-            pass.
-         create_test_data.py already loaded the demo evidence.
-         Calling clear_database() here destroyed all of it.
+     For a real image we wipe all tables for a clean run. In TEST_MODE the demo
+    evidence has already been loaded by create_test_data.py, so we must NOT
+    clear it.
     """
+    if "memory" in case_type.lower():
+        case_type = "memory_analysis"
+
     if image_path != "TEST_MODE":
         clear_database()                        # real image → fresh start
     # TEST_MODE → skip clear, demo data is already in the DB
@@ -113,35 +118,9 @@ def get_mft_timeline(image_path):
                 "IMPORTANT: 'delete' action rows prove a file was removed."
             )
         }
-    elif os.path.isdir(image_path) or image_path == "/mnt/windows_c":
-        # FALLBACK FOR LIVE MOUNT DIRECTORIES (Prevents MFTECmd breakage)
-        conn = get_connection()
-        c = conn.cursor()
-        inserted = 0
-        for root, dirs, files in os.walk(image_path):
-            if inserted > 2000: # Practical cutoff limit for processing speed
-                break
-            for f in files:
-                full_path = os.path.join(root, f)
-                try:
-                    stat = os.stat(full_path)
-                    c.execute(
-                        "INSERT INTO mft_events (filename, full_path, created_at, modified_at, file_size, action) "
-                        "VALUES (?, ?, datetime(?,'unixepoch'), datetime(?,'unixepoch'), ?, 'create')",
-                        (f, full_path, stat.st_ctime, stat.st_mtime, stat.st_size)
-                    )
-                    inserted += 1
-                except Exception:
-                    pass
-        conn.commit()
-        conn.close()
-        r = {
-            "status": "success", 
-            "table": "mft_events", 
-            "rows_inserted": inserted, 
-            "message": f"Natively extracted baseline file metadata map for {inserted} live files to bypass missing binary dependencies."
-        }
     else:
+        # extract_mft_timeline() routes directories → native walker,
+        # image files → fls/mactime, and returns a JSON error otherwise.
         r = extract_mft_timeline(image_path)
 
     record_tool_call("get_mft_timeline")
@@ -189,35 +168,9 @@ def get_prefetch(image_path):
                 "Use LIKE for name matching: executable_name LIKE '%EVIL%'"
             )
         }
-    elif os.path.isdir(image_path) or image_path == "/mnt/windows_c":
-        # FALLBACK FOR LIVE MOUNT DIRECTORIES (Bypasses missing 'pecmd' dependency)
-        pref_dir = os.path.join(image_path, "Windows/Prefetch")
-        if os.path.exists(pref_dir):
-            files = [f for f in os.listdir(pref_dir) if f.endswith('.pf')]
-            conn = get_connection()
-            c = conn.cursor()
-            inserted = 0
-            for f in files:
-                try:
-                    c.execute(
-                        "INSERT OR IGNORE INTO prefetch_events (executable_name, last_run_time, run_count) "
-                        "VALUES (?, '2012-04-06 14:00:00', 1)",
-                        (f,)
-                    )
-                    inserted += 1
-                except Exception:
-                    pass
-            conn.commit()
-            conn.close()
-            r = {
-                "status": "success", 
-                "table": "prefetch_events", 
-                "rows_inserted": inserted, 
-                "message": f"Successfully loaded {inserted} execution signatures directly from live .pf directory structure."
-            }
-        else:
-            r = {"status": "success", "table": "prefetch_events", "rows_inserted": 0, "message": "Windows/Prefetch directory path not accessible inside target mount location."}
     else:
+        # extract_prefetch() routes directories → native .pf parser (real mtimes),
+        # prefetch dirs → PECmd, and returns a JSON error otherwise.
         r = extract_prefetch(image_path)
 
     record_tool_call("get_prefetch")
@@ -289,8 +242,14 @@ def query_evidence(table, sql_filter="1=1", limit=20):
             "valid_tables": valid_tables,
             "hint": "Run the get_X() tools first to populate tables."
         }
-
-    limit = min(int(limit), 100)
+    
+    # Cap rows hard so a huge table can never explode the LLM context window
+    # (Groq free-tier TPM / HTTP 413 protection).
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 20
+    limit = max(1, min(limit, 25))
 
     if not sql_filter or sql_filter.strip() in ('', 'None', 'null'):
         sql_filter = "1=1"
@@ -298,16 +257,23 @@ def query_evidence(table, sql_filter="1=1", limit=20):
     sql = f"SELECT * FROM {table} WHERE {sql_filter} LIMIT {limit}"
 
     try:
+        total = _count_rows(table)
         rows = execute_safe_query(sql)
+        slim = [_truncate_row(r) for r in rows]
         return {
             "query": sql,
-            "row_count": len(rows),
-            "results": rows,
+            "row_count": len(slim),
+            "table_total_rows": total,
+            "results": slim,
             "note": (
                 "0 results = no evidence for that filter. "
                 "Try broader filter with LIKE or UPPER(). "
                 "Check table is populated: query_evidence with sql_filter='1=1'"
-            ) if len(rows) == 0 else f"{len(rows)} rows found."
+            ) if len(slim) == 0 else (
+                f"Showing {len(slim)} of {total} total rows in {table} "
+                f"(capped at {limit}). Long fields are truncated; narrow your "
+                f"sql_filter to inspect specific rows."
+            )
         }
     except Exception as e:
         try:
@@ -323,6 +289,7 @@ def query_evidence(table, sql_filter="1=1", limit=20):
             ),
             "sample_data": sample
         }
+
 
 def submit_claim(claim_json):
     if not claim_json or not isinstance(claim_json, dict):
@@ -369,5 +336,123 @@ def submit_claim(claim_json):
             "detail": str(e),
             "action_required": (
                 "Revise your claim to match the actual data shown above. "
-                    "Do NOT submit the same claim again unchanged.")
+                "Do NOT submit the same claim again unchanged."
+            )
         }
+
+
+# ─────────────────────────────────────────────────────────────
+# COVERAGE & CONCLUSION
+# ─────────────────────────────────────────────────────────────
+
+def get_coverage_status():
+    """Return the current coverage report (mandatory categories covered/missing)."""
+    return get_coverage_report()
+
+
+def conclude_investigation(analyst_summary=""):
+    """
+    Finalize the investigation. Fails (without crashing) if mandatory coverage
+    categories are still missing, returning the gap so the agent can fill it.
+    """
+    try:
+        check_can_conclude()
+    except ValueError as e:
+        return {
+            "status": "INCOMPLETE",
+            "detail": str(e),
+            "coverage": get_coverage_report(),
+            "action_required": (
+                "Run the missing collection tools listed above, then call "
+                "conclude_investigation again."
+            )
+        }
+    except Exception as e:
+        return {"status": "ERROR", "detail": f"Coverage check failed: {e}"}
+
+    try:
+        findings = execute_safe_query(
+            "SELECT finding_id, claim, confidence_tier, temporal_check, "
+            "mitre_technique FROM confirmed_findings"
+        )
+    except Exception:
+        findings = []
+
+    coverage = get_coverage_report()
+    report = {
+        "status": "COMPLETE",
+        "analyst_summary": analyst_summary,
+        "total_findings": len(findings),
+        "findings": [_truncate_row(f) for f in findings],
+        "coverage": coverage,
+        "anti_forensics_flags": [
+            f.get('finding_id') for f in findings
+            if str(f.get('temporal_check', '')).upper() not in ('PASS', '')
+        ],
+    }
+    log_end({"total_findings": len(findings),
+             "coverage_percentage": coverage.get("coverage_percentage", 0)})
+    return report
+
+
+# ─────────────────────────────────────────────────────────────
+# MEMORY-ANALYSIS TOOL WRAPPERS (Volatility3)
+# Each wrapper handles TEST_MODE and never raises — failures come back
+# as a clean JSON error so the agent can pivot to another data source.
+# ─────────────────────────────────────────────────────────────
+
+def _memory_tool(tool_name, table, extractor, image_path, test_schema, test_msg):
+    if image_path == "TEST_MODE":
+        count = _count_rows(table)
+        r = {
+            "status": "success", "table": table,
+            "rows_inserted": count, "sha256": "test_mode",
+            "schema": test_schema, "message": test_msg.format(count=count),
+        }
+    else:
+        try:
+            r = extractor(image_path)
+        except Exception as e:
+            r = {"status": "error", "table": table,
+                 "rows_inserted": 0, "error": f"{tool_name} failed: {e}"}
+
+    record_tool_call(tool_name)
+    log_tool(tool_name, {"image_path": image_path}, r)
+    return r
+
+
+def get_process_list(image_path):
+    return _memory_tool(
+        "get_process_list", "memory_processes", extract_process_list, image_path,
+        {"pid": "int", "ppid": "int", "process_name": "str",
+         "create_time": "datetime", "threads": "int", "handles": "int"},
+        "{count} processes loaded. Flag unusual parent/child PPIDs and "
+        "renamed system binaries (svchost/lsass from odd paths).")
+
+
+def get_network_connections(image_path):
+    return _memory_tool(
+        "get_network_connections", "memory_network", extract_network_connections,
+        image_path,
+        {"pid": "int", "process_name": "str", "proto": "str",
+         "local_addr": "str", "remote_addr": "str", "remote_port": "str",
+         "state": "str"},
+        "{count} network connections loaded. Flag ESTABLISHED sessions from "
+        "non-network processes and foreign remote IPs.")
+
+
+def get_cmdlines(image_path):
+    return _memory_tool(
+        "get_cmdlines", "memory_cmdlines", extract_cmdlines, image_path,
+        {"pid": "int", "process_name": "str", "cmdline": "str"},
+        "{count} command lines loaded. Flag base64 PowerShell (-EncodedCommand) "
+        "and LOLBins (certutil/mshta/regsvr32).")
+
+
+def get_malfind(image_path):
+    return _memory_tool(
+        "get_malfind", "memory_injections", extract_malfind, image_path,
+        {"pid": "int", "process_name": "str", "start_va": "str",
+         "protection": "str", "file_output": "str"},
+        "{count} suspicious memory regions. PAGE_EXECUTE_READWRITE = injected "
+        "shellcode/reflective DLL.")

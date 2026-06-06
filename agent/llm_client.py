@@ -1,8 +1,7 @@
-
-
 import os
 import json
 import re
+import time
 
 
 def get_backend():
@@ -41,13 +40,37 @@ def _groq(messages, system_prompt):
         full_messages.append({"role": "system", "content": system_prompt})
     full_messages.extend(messages)
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=full_messages,
-        temperature=0.1,
-        max_tokens=2048
-    )
-    return response.choices[0].message.content
+    # Retry with exponential backoff on transient rate-limit / size errors
+    # (HTTP 429 TPM throttle, 413 payload too large, 5xx). Honors Retry-After.
+    max_retries = int(os.getenv("GROQ_MAX_RETRIES", "5"))
+    delay = 2.0
+    last_err = None
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=full_messages,
+                temperature=0.1,
+                max_tokens=2048
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            last_err = e
+            status = getattr(e, "status_code", None) or getattr(
+                getattr(e, "response", None), "status_code", None)
+            retryable = status in (429, 413, 500, 502, 503) or status is None
+            if not retryable or attempt == max_retries - 1:
+                raise
+            wait = getattr(e, "retry_after", None)
+            try:
+                wait = float(wait) if wait else delay
+            except (TypeError, ValueError):
+                wait = delay
+            print(f"[GROQ] transient error (status={status}); "
+                  f"retry {attempt + 1}/{max_retries} in {wait:.1f}s")
+            time.sleep(wait)
+            delay = min(delay * 2, 30)
+    raise last_err
 
 
 def _ollama(messages, system_prompt):
@@ -63,8 +86,12 @@ def _ollama(messages, system_prompt):
 
     resp = requests.post(
         f"{host}/v1/chat/completions",
-        json={"model": model, "messages": full_messages,
-              "stream": False, "temperature": 0.1},
+        json={
+            "model": model,
+            "messages": full_messages,
+            "stream": False,
+            "temperature": 0.1
+        },
         timeout=120
     )
     resp.raise_for_status()
