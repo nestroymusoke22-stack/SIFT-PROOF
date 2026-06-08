@@ -1,0 +1,54 @@
+{
+  "case_id": "CASE-20260607-155150",
+  "case_name": "Case 4: Ali Hadi Challenge #9 (Encrypt Them All)",
+  "image_type": "E01",
+  "description": "AF-Case2.E01 - Evaluation matrix targeting layered encryption (AES, BitLocker, GPG). Validates anti-hallucination guardrails and intent classification models to suppress over-calling false positives on lawful privacy mechanisms.",
+  "analyzed_at": "2026-06-07T15:51:50.437482+00:00",
+  "tool": "SIFT-PROOF v1.0",
+  "evidence_integrity": {
+    "method": "Architectural \u2014 SQL assertion gate",
+    "hallucination_rate": "0.0% (confirmed findings require SQL proof)",
+    "false_positive_test": "PASSED \u2014 false claims rejected by assertion engine",
+    "write_block": "ENFORCED \u2014 execute_safe_query blocks INSERT/UPDATE/DELETE",
+    "spoliation_test": "PASSED",
+    "sha256_chain_present": true
+  },
+  "accuracy_metrics": {
+    "coverage_percentage": 100,
+    "artifact_categories_covered": [
+      "file_system_timeline",
+      "execution_artifacts",
+      "user_activity",
+      "persistence_mechanisms"
+    ],
+    "total_confirmed_findings": 0,
+    "total_inferred_findings": 0,
+    "false_positives": 0,
+    "hallucinated_claims": 0,
+    "mitre_techniques_mapped": []
+  },
+  "artifact_inventory": {
+    "file_system_timeline": {
+      "table": "mft_events",
+      "rows_extracted": 20000
+    },
+    "execution_artifacts": {
+      "table": "prefetch_events",
+      "rows_extracted": 184
+    },
+    "user_activity": {
+      "table": "evtx_events",
+      "rows_extracted": 1337
+    },
+    "persistence_mechanisms": {
+      "table": "registry_runkeys",
+      "rows_extracted": 6
+    }
+  },
+  "confirmed_findings": [],
+  "replay_instructions": {
+    "all_findings": "python3 replay.py --all",
+    "audit_trail": "python3 replay.py --audit",
+    "single": "python3 replay.py --finding_id <ID>"
+  }
+}

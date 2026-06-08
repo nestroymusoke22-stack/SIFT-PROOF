@@ -23,19 +23,19 @@ except Exception:
 
 
 SYSTEM_PROMPT = """You are SIFT-PROOF, an autonomous digital forensic analyst.
-
+ 
 You investigate disk images AND memory images for evidence of malicious activity.
 You communicate ONLY by outputting a single JSON object per response.
-
+ 
 OUTPUT FORMAT — you must always output exactly one JSON object:
 {"tool": "TOOL_NAME", "arguments": {"param": "value"}}
-
+ 
 To finish the investigation:
 {"tool": "DONE", "arguments": {"summary": "your full analysis here"}}
-
+ 
 AVAILABLE TOOLS — DISK ANALYSIS:
 1.  start_investigation     — {"tool": "start_investigation", "arguments": {"image_path": "PATH", "case_type": "windows_compromise"}}
-2.  get_mft_timeline         — {"tool": "get_mft_timeline", "arguments": {"image_path": "PATH"}}
+2.  get_mft_timeline        — {"tool": "get_mft_timeline", "arguments": {"image_path": "PATH"}}
 3.  get_amcache             — {"tool": "get_amcache", "arguments": {"image_path": "PATH"}}
 4.  get_prefetch            — {"tool": "get_prefetch", "arguments": {"image_path": "PATH"}}
 5.  get_evtx_events         — {"tool": "get_evtx_events", "arguments": {"image_path": "PATH"}}
@@ -44,62 +44,142 @@ AVAILABLE TOOLS — DISK ANALYSIS:
 8.  submit_claim            — {"tool": "submit_claim", "arguments": {"claim": "TEXT", "evidence_table": "TABLE", "sql_filter": "FILTER", "expected_result": "at_least_one_row", "mitre_technique": "TXXXX"}}
 9.  get_coverage_status     — {"tool": "get_coverage_status", "arguments": {}}
 10. conclude_investigation  — {"tool": "conclude_investigation", "arguments": {"analyst_summary": "FULL SUMMARY"}}
-
+ 
 AVAILABLE TOOLS — MEMORY ANALYSIS (use these when given a .raw/.mem/.dmp file):
 11. get_process_list        — {"tool": "get_process_list", "arguments": {"image_path": "PATH"}}
 12. get_network_connections — {"tool": "get_network_connections", "arguments": {"image_path": "PATH"}}
 13. get_cmdlines            — {"tool": "get_cmdlines", "arguments": {"image_path": "PATH"}}
 14. get_malfind             — {"tool": "get_malfind", "arguments": {"image_path": "PATH"}}
-
+ 
 EVIDENCE TABLES:
   Disk:   mft_events, prefetch_events, amcache_entries, evtx_events, registry_runkeys
   Memory: memory_processes, memory_network, memory_cmdlines, memory_injections
-
-MANDATORY PROTOCOL — DISK IMAGE:
-Step 1: start_investigation first
-Step 2: Run ALL five collection tools (get_mft_timeline, get_amcache, get_prefetch, get_evtx_events, get_registry_runkeys)
-Step 3: Use query_evidence to explore suspicious findings
-Step 4: Use submit_claim for every finding — NEVER state a finding without proving it
-Step 5: Call get_coverage_status then conclude_investigation
-
-MANDATORY PROTOCOL — MEMORY IMAGE (.raw/.mem/.dmp):
-Step 1: start_investigation first with case_type='memory_analysis'
-Step 2: Run ALL four memory extraction tools: get_process_list, get_network_connections, get_cmdlines, and get_malfind.
-Step 3: CRITICAL HUNTING CONSTRAINT: Advanced malware renames its processes to blend in (e.g., malicious binaries named 'svchost.exe' or 'lsass.exe'). Never state a memory dump is clean just because 'powershell.exe' or 'cmd.exe' are missing.
-Step 4: You MUST read the tool output messages carefully. Use query_evidence and target any suspicious PIDs, unusual parent-child relationships (PPIDs), unlinked processes, or foreign outbound IP connections noted in the triage text.
-Step 5: Prove every single anomaly you find using submit_claim before concluding.
+ 
+═══════════════════════════════════════════════════════════
+MANDATORY PROTOCOL — DISK IMAGE
+═══════════════════════════════════════════════════════════
+ 
+Step 1: start_investigation first.
+ 
+Step 2: Run ALL five collection tools:
+  get_mft_timeline, get_amcache, get_prefetch, get_evtx_events, get_registry_runkeys
+ 
+Step 3: SMART TRIAGE — read the MFT results carefully BEFORE filtering.
+  First: query_evidence(mft_events, "1=1", limit=20) to understand what kind of
+  system this is. Look for clues:
+    - XAMPP, Apache, IIS, nginx → web server — shift to web compromise hunting
+    - SQL Server, MySQL → database server — look for SQL injection artifacts
+    - Standard Windows desktop → traditional malware hunting
+ 
+Step 4: HUNT BY SYSTEM TYPE — do not just search for .exe in AppData.
+ 
+  IF web server indicators found (xampp, htdocs, wwwroot, inetpub, apache):
+    ► Search for web shells: query_evidence(mft_events,
+      "full_path LIKE '%htdocs%' OR full_path LIKE '%wwwroot%' OR
+       full_path LIKE '%inetpub%'", limit=50)
+    ► Look for script files: LIKE '%.php' OR LIKE '%.asp' OR LIKE '%.aspx'
+      OR LIKE '%.jsp' that were recently created or modified
+    ► Suspicious web shell patterns: single-file .php in web directory,
+      very small file size, created outside business hours
+    ► Check for command execution: filenames like 'cmd.php', 'shell.php',
+      'c99.php', 'r57.php', 'webshell.asp', or any .php with unusual names
+    ► Look in temp paths: LIKE '%/tmp/%' OR LIKE '%\\Temp\\%' for downloaded tools
+ 
+  IF standard Windows desktop:
+    ► Search AppData: LIKE '%AppData%' AND filename LIKE '%.exe'
+    ► Search Recycle Bin: LIKE '%Recycle%' AND filename LIKE '%.exe'
+    ► Check scheduled tasks in MFT: LIKE '%Tasks%' AND LIKE '%.job'
+ 
+  ALWAYS search for these regardless of system type:
+    ► Large files in unexpected locations (file_size > 5000000)
+    ► Files with mismatched extensions (.txt that is huge, .jpg that is .exe)
+    ► Recently created executables anywhere: filename LIKE '%.exe' with
+      created_at in the incident timeframe
+ 
+Step 5: Use submit_claim for every finding. NEVER declare clean without proving it.
+  If 0 results on a filter, try BROADER filters, not narrower ones.
+  Do NOT conclude just because event_id=4688 returned 0 rows.
+ 
+Step 6: Check registry for persistence pointing to web paths:
+  value_data LIKE '%xampp%' OR value_data LIKE '%htdocs%' OR value_data LIKE '%php%'
+ 
+Step 7: Call get_coverage_status. When is_complete=true, call conclude_investigation
+  with full analyst summary including what the system was and what type of
+  compromise was found.
+ 
+═══════════════════════════════════════════════════════════
+MANDATORY PROTOCOL — MEMORY IMAGE (.raw/.mem/.dmp)
+═══════════════════════════════════════════════════════════
+ 
+Step 1: start_investigation with case_type='memory_analysis'
+Step 2: Run ALL four memory tools: get_process_list, get_network_connections,
+        get_cmdlines, get_malfind
+Step 3: CRITICAL — Malware renames itself. Never conclude clean just because
+        powershell.exe or cmd.exe are absent.
+Step 4: Hunt anomalies:
+  - svchost.exe with ppid NOT equal to services.exe PID (process injection)
+  - svchost.exe with thread count > 200 (anomalous)
+  - Any process with established connection to non-RFC1918 IP
+  - Processes with no create_time (hollowed/injected)
+  - Apache/nginx/IIS processes with outbound connections (webshell C2)
+Step 5: Prove every anomaly with submit_claim before concluding.
 Step 6: Call conclude_investigation.
-
-SQL SYNTAX: strings need single quotes: executable_name = 'evil.exe' or LIKE '%evil%'
-
+ 
+═══════════════════════════════════════════════════════════
+SQL RULES
+═══════════════════════════════════════════════════════════
+- Strings need single quotes: filename = 'evil.php' or LIKE '%shell%'
+- Case-insensitive: UPPER(filename) LIKE '%SHELL%'
+- Do NOT put LIMIT inside sql_filter — use the limit parameter instead
+- Paths use forward slash in the DB: full_path LIKE '%/htdocs/%'
+ 
 IMPORTANT: Output ONLY the JSON object. No explanation before or after it."""
 
-
 # Largest tool result (in chars) we will ever feed back into the LLM context.
-# Protects against Groq free-tier TPM / HTTP 413 even if a tool ignores its caps.
 MAX_RESULT_CHARS = 6000
 
 
 def strip_reasoning(text):
     """
     Remove model reasoning blocks before JSON parsing.
-
-    Handles well-formed <think>...</think>, unclosed <think> (model was cut off
-    mid-reasoning), and a few common variants (<reasoning>, <thinking>).
+    Handles <think>, <thinking>, <reasoning> — closed and unclosed.
     """
     if not text:
         return ""
-    # Closed blocks, any of the common tag names, non-greedy, across newlines.
     text = re.sub(r'<(think|thinking|reasoning)>.*?</\1>', '', text,
                   flags=re.DOTALL | re.IGNORECASE)
-    # Unclosed opening tag → drop everything from the tag onward.
     text = re.sub(r'<(think|thinking|reasoning)>.*$', '', text,
                   flags=re.DOTALL | re.IGNORECASE)
-    # Stray closing tag with no opener → drop everything before it.
     m = re.search(r'</(think|thinking|reasoning)>', text, flags=re.IGNORECASE)
     if m:
         text = text[m.end():]
     return text.strip()
+
+
+def _extract_first_json(text):
+    """
+    FIX: Some models output two JSON objects back-to-back in one response.
+    parse_tool_call sees invalid JSON and returns None.
+    This function extracts just the FIRST complete JSON object.
+    Nothing else in the file is touched — this is purely additive.
+    """
+    if not text:
+        return None
+    first = text.find('{')
+    if first == -1:
+        return None
+    depth = 0
+    for i, ch in enumerate(text[first:], first):
+        if ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[first:i + 1])
+                except Exception:
+                    return None
+    return None
 
 
 def _truncate_result(result_str):
@@ -147,7 +227,6 @@ def dispatch(tool_name, arguments):
             result = sift.conclude_investigation(
                 arguments.get("analyst_summary", "")
             )
-
         # ── Memory analysis tools ─────────────────────────────────────────────
         elif tool_name == "get_process_list":
             result = sift.get_process_list(arguments.get("image_path", ""))
@@ -157,7 +236,6 @@ def dispatch(tool_name, arguments):
             result = sift.get_cmdlines(arguments.get("image_path", ""))
         elif tool_name == "get_malfind":
             result = sift.get_malfind(arguments.get("image_path", ""))
-
         else:
             result = {"error": f"Unknown tool: {tool_name}"}
 
@@ -169,7 +247,7 @@ def dispatch(tool_name, arguments):
         return json.dumps({"error": f"Tool error: {str(e)}"}, default=str)
 
 
-def run_investigation(image_path, case_type="generic", max_iterations=30):
+def run_investigation(image_path, case_type="generic", max_iterations=35):
     """Runs a complete autonomous forensic investigation."""
 
     backend = get_backend_info()
@@ -241,6 +319,14 @@ def run_investigation(image_path, case_type="generic", max_iterations=30):
         # ── Parse the JSON tool call ───────────────────────────────────────────
         tool_call = parse_tool_call(response_text)
 
+        # FIX: model sometimes outputs two JSON objects in one response.
+        # parse_tool_call sees invalid JSON and returns None.
+        # _extract_first_json pulls out just the first valid object.
+        if tool_call is None and response_text:
+            tool_call = _extract_first_json(response_text)
+            if tool_call is not None:
+                print(f"[AGENT] Recovered first JSON object from multi-object response")
+
         if tool_call is None:
             consecutive_parse_failures += 1
             print(f"[AGENT] Could not parse tool call (failure {consecutive_parse_failures})")
@@ -259,7 +345,6 @@ def run_investigation(image_path, case_type="generic", max_iterations=30):
                     "Try again. What is your next tool call?"
                 )
             })
-            # Save progress even on parse failures
             _save_state(iteration, image_path, case_type,
                         f"parse failure {consecutive_parse_failures}, retrying")
             continue
@@ -322,6 +407,28 @@ def run_investigation(image_path, case_type="generic", max_iterations=30):
         # ── Save progress checkpoint after every iteration ────────────────────
         _save_state(iteration, image_path, case_type,
                     f"completed tool {tool_name}, continuing")
+
+        # FIX: when coverage hits 100%, force the next message to conclude.
+        # Without this, the agent keeps querying evidence until it hits max_iterations.
+        if tool_name == "get_coverage_status":
+            try:
+                cov_data = json.loads(result_str)
+                if cov_data.get("is_complete") and cov_data.get("coverage_percentage") == 100:
+                    messages.append({"role": "assistant", "content": response_text})
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            f"Tool 'get_coverage_status' result:\n"
+                            f"{_truncate_result(result_str)}\n\n"
+                            "Coverage is 100% complete. All mandatory categories covered. "
+                            "You MUST call conclude_investigation RIGHT NOW with your full "
+                            "analyst summary of everything you found. "
+                            "Do not call any other tool first. Output the JSON now."
+                        )
+                    })
+                    continue
+            except Exception:
+                pass
 
         # ── Add exchange to conversation history (capped to protect context) ──
         messages.append({"role": "assistant", "content": response_text})

@@ -72,7 +72,7 @@ def _ok(table, inserted, raw_hash, schema, message, extra=None):
  
 # ── MFT timeline (native: os.walk over the live mount) ─────────────────────────
  
-def native_mft(root, max_files=20000):
+def native_mft(root, max_files=1000000):
     win_root = find_windows_root(root)
     raw_lines = []
     rows = []
@@ -395,8 +395,14 @@ def native_evtx(root, event_ids=None):
                    'Microsoft-Windows-Sysmon%4Operational.evtx')
     available = {f.lower(): f for f in os.listdir(logs_dir)
                  if f.lower().endswith('.evtx')}
+    
     to_parse = [available[w.lower()] for w in wanted_logs
-                if w.lower() in available] or list(available.values())
+                if w.lower() in available]
+    
+    # GUARDRAIL 1: Fallback scope extension if primary logs are missing or stripped.
+    # Prevents choking if security logs are cleared or rotated.
+    if not to_parse:
+        to_parse = list(available.values())
  
     rows = []
     raw_lines = []
@@ -419,12 +425,21 @@ def native_evtx(root, event_ids=None):
                     tm = re.search(r'<TimeCreated[^>]*SystemTime="([^"]+)"', xml)
                     ts = tm.group(1).replace('T', ' ')[:19] if tm else ''
                     computer = _xml_text(xml, 'Computer')
+                    
+                    # GUARDRAIL 2: Flexible pattern matching for user fields across multi-version XML formats
                     user = ''
                     um = re.search(
-                        r'<Data Name="(?:TargetUserName|SubjectUserName)">([^<]*)</Data>',
-                        xml)
+                        r'<(?:Data Name="(?:TargetUserName|SubjectUserName|User|AccountName)")|TargetUserName|SubjectUserName[^>]*>([^<]*)</(?:Data|TargetUserName|SubjectUserName)>',
+                        xml, re.IGNORECASE)
                     if um:
-                        user = um.group(1)
+                        user = um.group(1).strip()
+                    
+                    # GUARDRAIL 3: Structural fallback extraction for secondary infrastructure fields
+                    if not user:
+                        alt_um = re.search(r'<SecurityID[^>]*>([^<]*)</SecurityID>', xml)
+                        if alt_um and not alt_um.group(1).startswith('S-1-5-18'): # Skip local system noise
+                            user = alt_um.group(1)
+                            
                     desc = f"{log_name} EventID {eid}"
                     rows.append((eid, ts, computer, user, desc))
                     raw_lines.append(f"{eid}|{ts}|{computer}|{user}")

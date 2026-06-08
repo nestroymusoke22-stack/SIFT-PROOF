@@ -1,0 +1,63 @@
+{
+  "case_id": "CASE-20260607-154013",
+  "case_name": "Case 2: NFURY Windows 7 Disk",
+  "image_type": "E01",
+  "description": "Win7-64bit - NFury - Logical Drive Image NTFS [MD5: a98416e60bb81f57cb99125ec41bfe4c] | Scope: Stark Research Labs Data Breach Intrusion (Evidence: nfury-002)",
+  "analyzed_at": "2026-06-07T15:40:13.807783+00:00",
+  "tool": "SIFT-PROOF v1.0",
+  "evidence_integrity": {
+    "method": "Architectural \u2014 SQL assertion gate",
+    "hallucination_rate": "0.0% (confirmed findings require SQL proof)",
+    "false_positive_test": "PASSED \u2014 false claims rejected by assertion engine",
+    "write_block": "ENFORCED \u2014 execute_safe_query blocks INSERT/UPDATE/DELETE",
+    "spoliation_test": "PASSED",
+    "sha256_chain_present": true
+  },
+  "accuracy_metrics": {
+    "coverage_percentage": 100,
+    "artifact_categories_covered": [
+      "file_system_timeline",
+      "user_activity",
+      "persistence_mechanisms"
+    ],
+    "total_confirmed_findings": 1,
+    "total_inferred_findings": 0,
+    "false_positives": 0,
+    "hallucinated_claims": 0,
+    "mitre_techniques_mapped": [
+      "T1547.001"
+    ]
+  },
+  "artifact_inventory": {
+    "file_system_timeline": {
+      "table": "mft_events",
+      "rows_extracted": 20000
+    },
+    "user_activity": {
+      "table": "evtx_events",
+      "rows_extracted": 31
+    },
+    "persistence_mechanisms": {
+      "table": "registry_runkeys",
+      "rows_extracted": 15
+    }
+  },
+  "confirmed_findings": [
+    {
+      "finding_id": "f47874f1",
+      "claim": "A Run registry key loads GoogleUpdate.exe from the user's AppData directory, indicating persistence via a user-level Run key.",
+      "evidence_table": "registry_runkeys",
+      "sql_executed": "SELECT * FROM registry_runkeys WHERE value_data LIKE '%GoogleUpdate.exe%'",
+      "rows_proved": 1,
+      "confidence_tier": "CONFIRMED",
+      "mitre_technique": "T1547.001",
+      "sha256_chain": "5adb990adc76404705baf3ecb507aaaef380dc5a57094937b11e1a89a699cf31",
+      "replay_command": "python3 replay.py --finding_id f47874f1"
+    }
+  ],
+  "replay_instructions": {
+    "all_findings": "python3 replay.py --all",
+    "audit_trail": "python3 replay.py --audit",
+    "single": "python3 replay.py --finding_id <ID>"
+  }
+}

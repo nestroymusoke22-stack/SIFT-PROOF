@@ -1,0 +1,80 @@
+{
+  "case_id": "CASE-20260607-151936",
+  "case_name": "Case 1: Automated Mock Rig",
+  "image_type": "MOCK",
+  "description": "Synthetic Anti-Forensics and Temporal Contradiction Target",
+  "analyzed_at": "2026-06-07T15:19:36.500680+00:00",
+  "tool": "SIFT-PROOF v1.0",
+  "evidence_integrity": {
+    "method": "Architectural \u2014 SQL assertion gate",
+    "hallucination_rate": "0.0% (confirmed findings require SQL proof)",
+    "false_positive_test": "PASSED \u2014 false claims rejected by assertion engine",
+    "write_block": "ENFORCED \u2014 execute_safe_query blocks INSERT/UPDATE/DELETE",
+    "spoliation_test": "PASSED",
+    "sha256_chain_present": true
+  },
+  "accuracy_metrics": {
+    "coverage_percentage": 100,
+    "artifact_categories_covered": [
+      "file_system_timeline",
+      "execution_artifacts",
+      "user_activity",
+      "persistence_mechanisms"
+    ],
+    "total_confirmed_findings": 2,
+    "total_inferred_findings": 0,
+    "false_positives": 0,
+    "hallucinated_claims": 0,
+    "mitre_techniques_mapped": [
+      "T1070.006",
+      "T1547"
+    ]
+  },
+  "artifact_inventory": {
+    "file_system_timeline": {
+      "table": "mft_events",
+      "rows_extracted": 4
+    },
+    "execution_artifacts": {
+      "table": "amcache_entries",
+      "rows_extracted": 2
+    },
+    "user_activity": {
+      "table": "evtx_events",
+      "rows_extracted": 4
+    },
+    "persistence_mechanisms": {
+      "table": "registry_runkeys",
+      "rows_extracted": 2
+    }
+  },
+  "confirmed_findings": [
+    {
+      "finding_id": "a77a018b",
+      "claim": "Evil.exe was configured to run at startup via a Run registry key",
+      "evidence_table": "registry_runkeys",
+      "sql_executed": "SELECT * FROM registry_runkeys WHERE value_data LIKE '%evil.exe%'",
+      "rows_proved": 1,
+      "confidence_tier": "CONFIRMED",
+      "mitre_technique": "T1547",
+      "sha256_chain": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "replay_command": "python3 replay.py --finding_id a77a018b"
+    },
+    {
+      "finding_id": "6f8b4f23",
+      "claim": "Temporal contradiction between deletion and later execution of evil.exe indicates anti-forensic activity (timestomping)",
+      "evidence_table": "mft_events",
+      "sql_executed": "SELECT * FROM mft_events WHERE filename = 'evil.exe' AND action = 'delete'",
+      "rows_proved": 1,
+      "confidence_tier": "CONFIRMED",
+      "mitre_technique": "T1070.006",
+      "sha256_chain": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "replay_command": "python3 replay.py --finding_id 6f8b4f23"
+    }
+  ],
+  "replay_instructions": {
+    "all_findings": "python3 replay.py --all",
+    "audit_trail": "python3 replay.py --audit",
+    "single": "python3 replay.py --finding_id <ID>"
+  }
+}

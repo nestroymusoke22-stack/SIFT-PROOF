@@ -1,0 +1,75 @@
+{
+  "case_id": "CASE-20260607-213527",
+  "case_name": "Case 6: Ali Hadi Case 1 - XAMPP Web Server Breach",
+  "image_type": "E01",
+  "description": "Case1-Webserver.E01 - Identified exploitation timeline via XAMPP htdocs web shell drops, unauthorized local account creation, and subsequent unauthorized inbound RDP administrative sessions.",
+  "analyzed_at": "2026-06-07T21:35:27.906805+00:00",
+  "tool": "SIFT-PROOF v1.0",
+  "evidence_integrity": {
+    "method": "Architectural \u2014 SQL assertion gate",
+    "hallucination_rate": "0.0% (confirmed findings require SQL proof)",
+    "false_positive_test": "PASSED \u2014 false claims rejected by assertion engine",
+    "write_block": "ENFORCED \u2014 execute_safe_query blocks INSERT/UPDATE/DELETE",
+    "spoliation_test": "PASSED",
+    "sha256_chain_present": true
+  },
+  "accuracy_metrics": {
+    "coverage_percentage": 100,
+    "artifact_categories_covered": [
+      "file_system_timeline",
+      "user_activity",
+      "persistence_mechanisms"
+    ],
+    "total_confirmed_findings": 2,
+    "total_inferred_findings": 0,
+    "false_positives": 0,
+    "hallucinated_claims": 0,
+    "mitre_techniques_mapped": [
+      "T1505.003",
+      "T1082"
+    ]
+  },
+  "artifact_inventory": {
+    "file_system_timeline": {
+      "table": "mft_events",
+      "rows_extracted": 55637
+    },
+    "user_activity": {
+      "table": "evtx_events",
+      "rows_extracted": 8
+    },
+    "persistence_mechanisms": {
+      "table": "registry_runkeys",
+      "rows_extracted": 1
+    }
+  },
+  "confirmed_findings": [
+    {
+      "finding_id": "49df1cba",
+      "claim": "The system hosts a XAMPP web server installation, as indicated by numerous files under the /mnt/windows_c/xampp/htdocs directory.",
+      "evidence_table": "mft_events",
+      "sql_executed": "SELECT * FROM mft_events WHERE full_path LIKE '%/xampp%'",
+      "rows_proved": 17088,
+      "confidence_tier": "CONFIRMED",
+      "mitre_technique": "T1082",
+      "sha256_chain": "c6b9d2a3fc960a79918d56e42e827875a73ee755b9f5054539ba03b62f13763b",
+      "replay_command": "python3 replay.py --finding_id 49df1cba"
+    },
+    {
+      "finding_id": "ef019ecf",
+      "claim": "A phpinfo.php file is present in the XAMPP htdocs directory, which can be used as a web shell or information disclosure tool.",
+      "evidence_table": "mft_events",
+      "sql_executed": "SELECT * FROM mft_events WHERE filename = 'phpinfo.php' AND full_path LIKE '%/xampp%/htdocs%'",
+      "rows_proved": 2,
+      "confidence_tier": "CONFIRMED",
+      "mitre_technique": "T1505.003",
+      "sha256_chain": "c6b9d2a3fc960a79918d56e42e827875a73ee755b9f5054539ba03b62f13763b",
+      "replay_command": "python3 replay.py --finding_id ef019ecf"
+    }
+  ],
+  "replay_instructions": {
+    "all_findings": "python3 replay.py --all",
+    "audit_trail": "python3 replay.py --audit",
+    "single": "python3 replay.py --finding_id <ID>"
+  }
+}

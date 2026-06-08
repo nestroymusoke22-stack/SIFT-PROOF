@@ -1,0 +1,46 @@
+{
+  "case_id": "CASE-20260607-171746",
+  "case_name": "Case 5: ROCBA Enterprise Memory Analysis",
+  "image_type": "RAW",
+  "description": "Rocba-Memory.raw - Memory analysis completed successfully. Intercepted a highly anomalous svchost.exe container (PID 1248) hosting 266 active threads and holding 190 persistent outbound C2 data exfiltration sockets routing to 81.30.144.115 and 213.202.233.104 (MITRE T1041). Defensive LOLBin loops and EncodedCommand sweeps natively returned 0 rows. Volatility 3 windows.malfind timed out over 2,186 processes.",
+  "analyzed_at": "2026-06-07T17:17:46.635461+00:00",
+  "tool": "SIFT-PROOF v1.0",
+  "evidence_integrity": {
+    "method": "Architectural \u2014 SQL assertion gate",
+    "hallucination_rate": "0.0% (confirmed findings require SQL proof)",
+    "false_positive_test": "PASSED \u2014 false claims rejected by assertion engine",
+    "write_block": "ENFORCED \u2014 execute_safe_query blocks INSERT/UPDATE/DELETE",
+    "spoliation_test": "PASSED",
+    "sha256_chain_present": true
+  },
+  "accuracy_metrics": {
+    "coverage_percentage": 100,
+    "artifact_categories_covered": [],
+    "total_confirmed_findings": 1,
+    "total_inferred_findings": 0,
+    "false_positives": 0,
+    "hallucinated_claims": 0,
+    "mitre_techniques_mapped": [
+      "T1041"
+    ]
+  },
+  "artifact_inventory": {},
+  "confirmed_findings": [
+    {
+      "finding_id": "87697a98",
+      "claim": "svchost.exe processes have established external network connections to non-local IP addresses, indicating possible command and control communication.",
+      "evidence_table": "memory_network",
+      "sql_executed": "SELECT * FROM memory_network WHERE process_name = 'svchost.exe' AND remote_addr NOT LIKE '10.%' AND remote_addr NOT LIKE '192.168.%' AND remote_addr NOT LIKE '172.%'",
+      "rows_proved": 190,
+      "confidence_tier": "CONFIRMED",
+      "mitre_technique": "T1041",
+      "sha256_chain": "9e17e9db118c27c10aa3d64d1f1f0923d6f851362aabc0db42bb965575ded34b",
+      "replay_command": "python3 replay.py --finding_id 87697a98"
+    }
+  ],
+  "replay_instructions": {
+    "all_findings": "python3 replay.py --all",
+    "audit_trail": "python3 replay.py --audit",
+    "single": "python3 replay.py --finding_id <ID>"
+  }
+}

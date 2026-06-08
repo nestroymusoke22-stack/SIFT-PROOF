@@ -1,0 +1,68 @@
+{
+  "cases": [
+    {
+      "case_id": "CASE-20260607-151936",
+      "case_name": "Case 1: Automated Mock Rig",
+      "image_type": "MOCK",
+      "findings": 2,
+      "coverage": "100%",
+      "file": "CASE-20260607-151936-Case-1--Automated-Mock-Rig.json",
+      "analyzed_at": "2026-06-07T15:19:36.500680+00:00"
+    },
+    {
+      "case_id": "CASE-20260607-153124",
+      "case_name": "Case 3: TDUNGAN Windows XP Disk",
+      "image_type": "E01",
+      "findings": 2,
+      "coverage": "100%",
+      "file": "CASE-20260607-153124-Case-3--TDUNGAN-Windows-XP-Disk.json",
+      "analyzed_at": "2026-06-07T15:31:24.680080+00:00"
+    },
+    {
+      "case_id": "CASE-20260607-154013",
+      "case_name": "Case 2: NFURY Windows 7 Disk",
+      "image_type": "E01",
+      "findings": 1,
+      "coverage": "100%",
+      "file": "CASE-20260607-154013-Case-2--NFURY-Windows-7-Disk.json",
+      "analyzed_at": "2026-06-07T15:40:13.807783+00:00"
+    },
+    {
+      "case_id": "CASE-20260607-155150",
+      "case_name": "Case 4: Ali Hadi Challenge #9 (Encrypt Them All)",
+      "image_type": "E01",
+      "findings": 0,
+      "coverage": "100%",
+      "file": "CASE-20260607-155150-Case-4--Ali-Hadi-Challenge--9--Encrypt-T.json",
+      "analyzed_at": "2026-06-07T15:51:50.437482+00:00"
+    },
+    {
+      "case_id": "CASE-20260607-171746",
+      "case_name": "Case 5: ROCBA Enterprise Memory Analysis",
+      "image_type": "RAW",
+      "findings": 1,
+      "coverage": "100%",
+      "file": "CASE-20260607-171746-Case-5--ROCBA-Enterprise-Memory-Analysis.json",
+      "analyzed_at": "2026-06-07T17:17:46.635461+00:00"
+    },
+    {
+      "case_id": "CASE-20260607-213527",
+      "case_name": "Case 6: Ali Hadi Case 1 - XAMPP Web Server Breach",
+      "image_type": "E01",
+      "findings": 2,
+      "coverage": "100%",
+      "file": "CASE-20260607-213527-Case-6--Ali-Hadi-Case-1---XAMPP-Web-Serv.json",
+      "analyzed_at": "2026-06-07T21:35:27.906805+00:00"
+    },
+    {
+      "case_id": "CASE-20260608-091006",
+      "case_name": "Case 7: Fred Rocba Insider Threat Investigation",
+      "image_type": "E01",
+      "findings": 0,
+      "coverage": "100%",
+      "file": "CASE-20260608-091006-Case-7--Fred-Rocba-Insider-Threat-Invest.json",
+      "analyzed_at": "2026-06-08T09:10:06.264364+00:00"
+    }
+  ],
+  "total_cases": 7
+}

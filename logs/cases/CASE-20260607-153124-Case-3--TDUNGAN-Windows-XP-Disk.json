@@ -1,0 +1,75 @@
+{
+  "case_id": "CASE-20260607-153124",
+  "case_name": "Case 3: TDUNGAN Windows XP Disk",
+  "image_type": "E01",
+  "description": "Windows XP SP3 SP3 - TDungan - Logical Drive Image NTFS [MD5: 60b778a12a4b7ad5ed5b28eb6e869b3f] | Scope: Stark Research Labs Data Breach Intrusion",
+  "analyzed_at": "2026-06-07T15:31:24.680080+00:00",
+  "tool": "SIFT-PROOF v1.0",
+  "evidence_integrity": {
+    "method": "Architectural \u2014 SQL assertion gate",
+    "hallucination_rate": "0.0% (confirmed findings require SQL proof)",
+    "false_positive_test": "PASSED \u2014 false claims rejected by assertion engine",
+    "write_block": "ENFORCED \u2014 execute_safe_query blocks INSERT/UPDATE/DELETE",
+    "spoliation_test": "PASSED",
+    "sha256_chain_present": true
+  },
+  "accuracy_metrics": {
+    "coverage_percentage": 100,
+    "artifact_categories_covered": [
+      "file_system_timeline",
+      "execution_artifacts",
+      "persistence_mechanisms"
+    ],
+    "total_confirmed_findings": 2,
+    "total_inferred_findings": 0,
+    "false_positives": 0,
+    "hallucinated_claims": 0,
+    "mitre_techniques_mapped": [
+      "T1204.002",
+      "T1036.005"
+    ]
+  },
+  "artifact_inventory": {
+    "file_system_timeline": {
+      "table": "mft_events",
+      "rows_extracted": 20000
+    },
+    "execution_artifacts": {
+      "table": "prefetch_events",
+      "rows_extracted": 113
+    },
+    "persistence_mechanisms": {
+      "table": "registry_runkeys",
+      "rows_extracted": 10
+    }
+  },
+  "confirmed_findings": [
+    {
+      "finding_id": "9a878da3",
+      "claim": "Execution of generic A.EXE observed via Prefetch entries, indicating possible malicious execution of a suspicious file.",
+      "evidence_table": "prefetch_events",
+      "sql_executed": "SELECT * FROM prefetch_events WHERE executable_name LIKE 'A.EXE%'",
+      "rows_proved": 4,
+      "confidence_tier": "CONFIRMED",
+      "mitre_technique": "T1204.002",
+      "sha256_chain": "02f5c901ba3243ede52b332b94b0cf75497c4d77b1359ee21255201d17cbe798",
+      "replay_command": "python3 replay.py --finding_id 9a878da3"
+    },
+    {
+      "finding_id": "791125af",
+      "claim": "Presence of a.exe in user Temp directories (e.g., /Local Settings/Temp/a.exe) suggests a potentially malicious executable masquerading with a generic name.",
+      "evidence_table": "mft_events",
+      "sql_executed": "SELECT * FROM mft_events WHERE filename = 'a.exe' AND full_path LIKE '%Temp%'",
+      "rows_proved": 4,
+      "confidence_tier": "CONFIRMED",
+      "mitre_technique": "T1036.005",
+      "sha256_chain": "52cb6fca7bec2957521bdee9b47d91cb0d0dd8e0bb95edfe5d84bc1a42f2e572",
+      "replay_command": "python3 replay.py --finding_id 791125af"
+    }
+  ],
+  "replay_instructions": {
+    "all_findings": "python3 replay.py --all",
+    "audit_trail": "python3 replay.py --audit",
+    "single": "python3 replay.py --finding_id <ID>"
+  }
+}

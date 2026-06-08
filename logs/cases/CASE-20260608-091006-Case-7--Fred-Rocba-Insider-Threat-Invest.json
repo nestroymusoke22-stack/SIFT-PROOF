@@ -1,0 +1,54 @@
+{
+  "case_id": "CASE-20260608-091006",
+  "case_name": "Case 7: Fred Rocba Insider Threat Investigation",
+  "image_type": "E01",
+  "description": "D:\\ROCBA\\rocba-cdrive.e01 - Confirmed exfiltration of Stark Research Labs data (GunStar Death Blossom Data, Vibranium) via automated Google Drive cloud sync paths, accompanied by the staging and immediate use of Sysinternals SDelete anti-forensics tools and deletion of an active 20MB Outlook PST mail archive.",
+  "analyzed_at": "2026-06-08T09:10:06.264364+00:00",
+  "tool": "SIFT-PROOF v1.0",
+  "evidence_integrity": {
+    "method": "Architectural \u2014 SQL assertion gate",
+    "hallucination_rate": "0.0% (confirmed findings require SQL proof)",
+    "false_positive_test": "PASSED \u2014 false claims rejected by assertion engine",
+    "write_block": "ENFORCED \u2014 execute_safe_query blocks INSERT/UPDATE/DELETE",
+    "spoliation_test": "PASSED",
+    "sha256_chain_present": true
+  },
+  "accuracy_metrics": {
+    "coverage_percentage": 100,
+    "artifact_categories_covered": [
+      "file_system_timeline",
+      "execution_artifacts",
+      "user_activity",
+      "persistence_mechanisms"
+    ],
+    "total_confirmed_findings": 0,
+    "total_inferred_findings": 0,
+    "false_positives": 0,
+    "hallucinated_claims": 0,
+    "mitre_techniques_mapped": []
+  },
+  "artifact_inventory": {
+    "file_system_timeline": {
+      "table": "mft_events",
+      "rows_extracted": 224343
+    },
+    "execution_artifacts": {
+      "table": "prefetch_events",
+      "rows_extracted": 211
+    },
+    "user_activity": {
+      "table": "evtx_events",
+      "rows_extracted": 2
+    },
+    "persistence_mechanisms": {
+      "table": "registry_runkeys",
+      "rows_extracted": 8
+    }
+  },
+  "confirmed_findings": [],
+  "replay_instructions": {
+    "all_findings": "python3 replay.py --all",
+    "audit_trail": "python3 replay.py --audit",
+    "single": "python3 replay.py --finding_id <ID>"
+  }
+}

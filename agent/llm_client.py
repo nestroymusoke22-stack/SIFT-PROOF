@@ -21,6 +21,8 @@ def chat(messages, system_prompt=None):
         return _ollama(messages, system_prompt)
     elif backend == "anthropic":
         return _anthropic(messages, system_prompt)
+    elif backend == "openrouter":
+        return _openrouter(messages, system_prompt)
     else:
         raise ValueError(f"Unknown backend: {backend}")
 
@@ -41,7 +43,6 @@ def _groq(messages, system_prompt):
     full_messages.extend(messages)
 
     # Retry with exponential backoff on transient rate-limit / size errors
-    # (HTTP 429 TPM throttle, 413 payload too large, 5xx). Honors Retry-After.
     max_retries = int(os.getenv("GROQ_MAX_RETRIES", "5"))
     delay = 2.0
     last_err = None
@@ -69,6 +70,53 @@ def _groq(messages, system_prompt):
             print(f"[GROQ] transient error (status={status}); "
                   f"retry {attempt + 1}/{max_retries} in {wait:.1f}s")
             time.sleep(wait)
+            delay = min(delay * 2, 30)
+    raise last_err
+
+
+def _openrouter(messages, system_prompt):
+    from openai import OpenAI
+
+    key = os.getenv("OPENROUTER_API_KEY")
+    if not key:
+        raise ValueError("OPENROUTER_API_KEY not set. Get a free key at openrouter.ai")
+
+    # Defaulting to OpenAI's massive high-reasoning flagship open variant
+    model = os.getenv("OPENROUTER_MODEL", "openai/gpt-oss-120b")
+    
+    # Reroute to OpenRouter gateway using native OpenAI SDK client specs
+    client = OpenAI(
+        api_key=key,
+        base_url="https://openrouter.ai/api/v1"
+    )
+
+    full_messages = []
+    if system_prompt:
+        full_messages.append({"role": "system", "content": system_prompt})
+    full_messages.extend(messages)
+
+    max_retries = int(os.getenv("OPENROUTER_MAX_RETRIES", "5"))
+    delay = 2.0
+    last_err = None
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=full_messages,
+                temperature=0.1,
+                max_tokens=2048
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            last_err = e
+            status = getattr(e, "status_code", None) or getattr(
+                getattr(e, "response", None), "status_code", None)
+            retryable = status in (429, 413, 500, 502, 503) or status is None
+            if not retryable or attempt == max_retries - 1:
+                raise
+            print(f"[OPENROUTER] transient error (status={status}); "
+                  f"retry {attempt + 1}/{max_retries} in {delay:.1f}s")
+            time.sleep(delay)
             delay = min(delay * 2, 30)
     raise last_err
 
@@ -120,21 +168,9 @@ def _anthropic(messages, system_prompt):
 
 
 def parse_tool_call(text):
-    """
-    Parses the model's JSON response into a tool call dict.
-
-    Model is instructed to output exactly one of:
-      {"tool": "tool_name", "arguments": {...}}
-      {"tool": "DONE", "arguments": {"summary": "..."}}
-
-    Returns dict with keys: tool, arguments
-    Returns None if no valid JSON found (treat as final message).
-    """
     if not text:
         return None
 
-    # Try to find JSON block in the response
-    # Model sometimes wraps it in ```json ... ``` or just outputs raw JSON
     patterns = [
         r'```json\s*(\{.*?\})\s*```',
         r'```\s*(\{.*?\})\s*```',
@@ -151,7 +187,6 @@ def parse_tool_call(text):
             except json.JSONDecodeError:
                 continue
 
-    # Try parsing the whole response as JSON
     try:
         text_clean = text.strip()
         if text_clean.startswith("{"):
@@ -186,4 +221,11 @@ def get_backend_info():
             "model": os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
             "cost": "PAID",
             "key_set": bool(os.getenv("ANTHROPIC_API_KEY"))
+        }
+    elif backend == "openrouter":
+        return {
+            "backend": "OpenRouter Gateway",
+            "model": os.getenv("OPENROUTER_MODEL", "openai/gpt-oss-120b"),
+            "cost": "FREE-TIER",
+            "key_set": bool(os.getenv("OPENROUTER_API_KEY"))
         }
